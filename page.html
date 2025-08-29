@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>流山検車区配置図</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+    body{margin:0;padding:10px;background:#f3f4f6;display:flex;flex-direction:column;min-height:100vh}
+    .wrap{flex:1;width:100%;}
+    h1{text-align:center;font-size:clamp(18px,3vw,28px);margin:8px 0 16px}
+
+    .yard{position:relative;width:100%;aspect-ratio:16/9;background-image:url('スクリーンショット 2025-08-29 151407.png');background-size:contain;background-repeat:no-repeat;background-position:center;box-shadow:0 6px 18px rgba(0,0,0,0.12);border-radius:8px;overflow:hidden}
+    .place{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:12px;background:rgba(255,255,255,0.9);border:1px solid rgba(0,0,0,0.08);cursor:pointer;white-space:nowrap;font-size:clamp(10px,2vw,14px)}
+    .place img{width:clamp(16px,4vw,28px);height:clamp(16px,4vw,28px);object-fit:contain;margin-right:4px}
+    .place .label{font-weight:600;display:flex;align-items:center;gap:4px}
+    .place .empty{font-size:clamp(12px,3vw,20px);color:#999;font-weight:700}
+
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
+    .modal{width:100%;max-width:520px;background:#fff;border-radius:8px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.2)}
+    .modal h2{margin:0 0 8px;font-size:16px}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0}
+    .row label{min-width:72px;color:#333;font-size:14px}
+    select,input[type=text],textarea{flex:1;padding:8px;border-radius:6px;border:1px solid #ddd;font-size:14px}
+    textarea{min-height:80px}
+    .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    button{padding:8px 12px;border-radius:6px;border:0;background:#0ea5a4;color:#fff;cursor:pointer;font-size:14px}
+    button.ghost{background:#eef2f7;color:#333;border:1px solid #d1d5db}
+    button.destructive{background:#ef4444}
+
+    footer{margin-top:16px;text-align:center;font-size:12px;color:#555}
+    footer a{color:#0ea5a4;text-decoration:none}
+
+    @media (max-width:680px){
+      .row label{min-width:60px;font-size:12px}
+      select,input,textarea{font-size:12px;padding:6px}
+      button{font-size:12px;padding:6px 8px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>流山検車区配置図</h1>
+    <div id="yard" class="yard" aria-label="車両基地キャンバス"></div>
+  </div>
+
+  <footer>
+    表示内容は <a href="https://www.haisenryakuzu.net/" target="_blank" rel="noopener noreferrer">配線略図.net</a>
+  </footer>
+
+  <div id="modalBg" class="modal-bg" role="dialog" aria-modal="true">
+    <div class="modal" role="document">
+      <h2 id="modalTitle">編成の編集</h2>
+      <div class="row"><label>場所</label><div id="placeLabel">--</div></div>
+      <div id="formsContainer"></div>
+      <div class="row"><button id="addFormBtn">＋連結を追加</button></div>
+      <div class="actions">
+        <button class="ghost" id="clearBtn">解除</button>
+        <button class="ghost" id="cancelBtn">キャンセル</button>
+        <button id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const W = 1920, H = 1080;
+    function worldToPercent(x,y){
+      const left = ((x + W/2) / W) * 100;
+      const top = ((y + H/2) / H) * 100;
+      return {left, top};
+    }
+
+    const options = [
+      {label:'さくら 5001', value:'5001', icon:'さくら.png'},
+      {label:'流星 5002', value:'5002', icon:'流星.png'},
+      {label:'あかぎ 5003', value:'5003', icon:'あかぎ.png'},
+      {label:'若葉 5004', value:'5004', icon:'若葉.png'},
+      {label:'なの花 5005', value:'5005', icon:'なの花.png'},
+      {label:'211 GG5', value:'211 GG5', icon:'211.png'},
+      {label:'211 GG6', value:'211 GG6', icon:'211.png'},
+      {label:'211 GG8', value:'211 GG8', icon:'211.png'},
+      {label:'211 GG9', value:'211 GG9', icon:'211.png'},
+    ];
+
+    const places = [
+      {id:'spot-1', x:-777.0, y:197.0, label:'A', assigned:[]},
+      {id:'spot-2', x:113.0, y:-195.0, label:'B', assigned:[]},
+      {id:'spot-3', x:-362.0, y:198.5, label:'C', assigned:[]},
+      {id:'spot-4', x:-118.0, y:68.0, label:'D', assigned:[]},
+      {id:'spot-5', x:113.0, y:203.0, label:'E', assigned:[]},
+      {id:'spot-6', x:294.5, y:405.0, label:'F', assigned:[]},
+      {id:'spot-7', x:599.0, y:66.0, label:'G', assigned:[]},
+      {id:'spot-8', x:599.0, y:269.0, label:'H', assigned:[]},
+      {id:'spot-9', x:599.0, y:397.0, label:'I', assigned:[]},
+    ];
+
+    const LS_KEY = 'yard_state_shared';
+    const yard = document.getElementById('yard');
+    const modalBg = document.getElementById('modalBg');
+    const placeLabel = document.getElementById('placeLabel');
+    const formsContainer = document.getElementById('formsContainer');
+    const addFormBtn = document.getElementById('addFormBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const modalTitle = document.getElementById('modalTitle');
+
+    let activePlaceId = null;
+    let ws;
+
+    function connectWS(){
+      ws = new WebSocket('wss://echo.websocket.events');
+      ws.onopen = ()=>console.log('connected');
+      ws.onmessage = (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if(msg.type==='update' && msg.state){
+            for(const p of places){
+              const found = msg.state.find(s=>s.id===p.id);
+              if(found) p.assigned = found.assigned;
+            }
+            render();
+          }
+        }catch(e){console.warn('ws msg error',e)}
+      };
+    }
+
+    function broadcast(){
+      if(ws && ws.readyState===1){
+        ws.send(JSON.stringify({type:'update', state:places.map(p=>({id:p.id,assigned:p.assigned}))}));
+      }
+    }
+
+    function load(){
+      try{
+        const raw = localStorage.getItem(LS_KEY);
+        if(raw){
+          const saved = JSON.parse(raw);
+          for(const p of places){
+            const found = saved.find(s => s.id === p.id);
+            if(found) p.assigned = found.assigned || [];
+          }
+        }
+      }catch(e){console.warn('load error',e)}
+    }
+
+    function save(){
+      try{
+        localStorage.setItem(LS_KEY, JSON.stringify(places.map(p=>({id:p.id,assigned:p.assigned}))));
+        broadcast();
+      }catch(e){console.warn('save error',e)}
+    }
+
+    function render(){
+      yard.innerHTML = '';
+      for(const p of places){
+        const {left, top} = worldToPercent(p.x,p.y);
+        const el = document.createElement('div');
+        el.className = 'place';
+        el.style.left = left.toFixed(4)+'%';
+        el.style.top = top.toFixed(4)+'%';
+        el.dataset.id = p.id;
+
+        if(!p.assigned || p.assigned.length===0){
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = p.label;
+          el.appendChild(empty);
+        }else{
+          const label = document.createElement('div');
+          label.className = 'label';
+
+          p.assigned.forEach((a,idx)=>{
+            if(idx>0){
+              const plus = document.createElement('span');
+              plus.textContent = '＋';
+              label.appendChild(plus);
+            }
+            const icon = document.createElement('img');
+            const opt = options.find(o=>o.label===a.value);
+            icon.src = opt ? opt.icon : '';
+            const span = document.createElement('span');
+            span.textContent = a.value;
+            const wrap = document.createElement('div');
+            wrap.style.display='flex';wrap.style.alignItems='center';
+            wrap.appendChild(icon);
+            wrap.appendChild(span);
+            label.appendChild(wrap);
+          });
+
+          el.appendChild(label);
+        }
+
+        el.addEventListener('click',(ev)=>{ev.stopPropagation();openEditor(p.id)});
+        yard.appendChild(el);
+      }
+    }
+
+    function createFormBlock(data={value:''}){
+      const block = document.createElement('div');
+      block.className = 'formBlock';
+
+      const select = document.createElement('select');
+      select.className = 'formationSelect';
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '選択してください';
+      select.appendChild(emptyOption);
+      options.forEach(opt=>{
+        const op = document.createElement('option');
+        op.value = opt.label;
+        op.textContent = opt.label;
+        if(data.value===opt.label) op.selected = true;
+        select.appendChild(op);
+      });
+
+      const row1 = document.createElement('div');
+      row1.className = 'row';
+      const label1 = document.createElement('label');
+      label1.textContent = '編成番号';
+      row1.appendChild(label1);
+      row1.appendChild(select);
+
+      block.appendChild(row1);
+      return block;
+    }
+
+    function openEditor(id){
+      activePlaceId=id;
+      const p=places.find(x=>x.id===id);
+      modalTitle.textContent=`編成編集 — ${p.label}`;
+      placeLabel.textContent=`${p.label}`;
+      formsContainer.innerHTML='';
+      if(p.assigned && p.assigned.length>0){
+        for(const a of p.assigned){formsContainer.appendChild(createFormBlock(a));}
+      }else{
+        formsContainer.appendChild(createFormBlock());
+      }
+      modalBg.style.display='flex';
+    }
+
+    addFormBtn.addEventListener('click',()=>{formsContainer.appendChild(createFormBlock());});
+    saveBtn.addEventListener('click',()=>{
+      if(!activePlaceId)return;
+      const p=places.find(x=>x.id===activePlaceId);
+      const blocks=formsContainer.querySelectorAll('.formBlock');
+      p.assigned=[];const seen=new Set();
+      blocks.forEach(block=>{
+        const select=block.querySelector('.formationSelect');
+        const val=select.value.trim();
+        if(val&&!seen.has(val)){seen.add(val);p.assigned.push({value:val});}
+      });
+      save();render();modalBg.style.display='none';activePlaceId=null;
+    });
+    cancelBtn.addEventListener('click',()=>{modalBg.style.display='none';activePlaceId=null});
+    clearBtn.addEventListener('click',()=>{if(!activePlaceId)return;const p=places.find(x=>x.id===activePlaceId);p.assigned=[];save();render();modalBg.style.display='none';activePlaceId=null});
+
+    connectWS();load();render();
+  </script>
+</body>
+</html>
